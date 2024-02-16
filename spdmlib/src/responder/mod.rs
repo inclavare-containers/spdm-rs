@@ -28,8 +28,7 @@ mod version_rsp;
 mod error_rsp;
 mod vendor_rsp;
 
-pub mod app_message_handler;
-
+pub use context::ProcessMessageResult;
 pub use context::ResponderContext;
 
 use crate::config;

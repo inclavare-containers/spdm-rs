@@ -2,11 +2,12 @@
 //
 // SPDX-License-Identifier: Apache-2.0 or MIT
 
-use super::app_message_handler::dispatch_secured_app_message_cb;
+use crate::common::{session, SpdmConnectionState, ST1};
 use crate::common::{session::SpdmSessionState, SpdmDeviceIo, SpdmTransportEncap};
-use crate::common::{SpdmConnectionState, ST1};
 use crate::config::{self, MAX_SPDM_MSG_SIZE, RECEIVER_BUFFER_SIZE};
-use crate::error::{SpdmResult, SPDM_STATUS_INVALID_STATE_LOCAL, SPDM_STATUS_UNSUPPORTED_CAP};
+use crate::error::{
+    SpdmResult, SpdmStatus, SPDM_STATUS_INVALID_STATE_LOCAL, SPDM_STATUS_UNSUPPORTED_CAP,
+};
 use crate::message::*;
 use crate::protocol::{SpdmRequestCapabilityFlags, SpdmResponseCapabilityFlags};
 use crate::watchdog::{reset_watchdog, start_watchdog};
@@ -19,6 +20,19 @@ use spin::Mutex;
 
 pub struct ResponderContext {
     pub common: crate::common::SpdmContext,
+}
+
+pub enum ProcessMessageResult {
+    Success {
+        used: usize, /* bytes of transport layer payload */
+    },
+    SuccessSecured {
+        used: usize,        /* bytes of transport layer payload */
+        decode_size: usize, /* bytes of decoded SPDM secure message */
+        is_app_message: bool,
+    },
+    SpdmHandleError(SpdmStatus),
+    DecodeError(/* used */ usize),
 }
 
 impl ResponderContext {
@@ -81,6 +95,11 @@ impl ResponderContext {
             let mut device_io = self.common.device_io.lock();
             let device_io: &mut (dyn SpdmDeviceIo + Send + Sync) = device_io.deref_mut();
             device_io.send(Arc::new(&transport_buffer[..used])).await?;
+        }
+
+        if is_app_message {
+            // If we are sending app message, there is no need to update internal state.
+            return Ok(());
         }
 
         let opcode = send_buffer[1];
@@ -191,9 +210,9 @@ impl ResponderContext {
     pub async fn process_message(
         &mut self,
         crypto_request: bool,
-        app_handle: usize, // interpreted/managed by User
         raw_packet: &mut [u8; RECEIVER_BUFFER_SIZE],
-    ) -> Result<SpdmResult, usize> {
+        spdm_buffer: &mut [u8; MAX_SPDM_MSG_SIZE],
+    ) -> ProcessMessageResult {
         let mut response_buffer = [0u8; MAX_SPDM_MSG_SIZE];
         let mut writer = Writer::init(&mut response_buffer);
 
@@ -201,9 +220,15 @@ impl ResponderContext {
             Ok((used, secured_message)) => {
                 if secured_message {
                     let mut read = Reader::init(&raw_packet[0..used]);
-                    let session_id = u32::read(&mut read).ok_or(used)?;
+                    let session_id = match u32::read(&mut read) {
+                        Some(session_id) => session_id,
+                        None => return ProcessMessageResult::DecodeError(used),
+                    };
 
-                    let spdm_session = self.common.get_session_via_id(session_id).ok_or(used)?;
+                    let spdm_session = match self.common.get_session_via_id(session_id) {
+                        Some(spdm_session) => spdm_session,
+                        None => return ProcessMessageResult::DecodeError(used),
+                    };
 
                     let mut app_buffer = [0u8; config::RECEIVER_BUFFER_SIZE];
 
@@ -213,11 +238,10 @@ impl ResponderContext {
                         true,
                     );
                     if decode_size.is_err() {
-                        return Err(used);
+                        return ProcessMessageResult::DecodeError(used);
                     }
                     let decode_size = decode_size.unwrap();
 
-                    let mut spdm_buffer = [0u8; config::MAX_SPDM_MSG_SIZE];
                     let decap_result = {
                         let mut transport_encap = self.common.transport_encap.lock();
                         let transport_encap: &mut (dyn SpdmTransportEncap + Send + Sync) =
@@ -225,12 +249,12 @@ impl ResponderContext {
                         transport_encap
                             .decap_app(
                                 Arc::new(&app_buffer[0..decode_size]),
-                                Arc::new(Mutex::new(&mut spdm_buffer)),
+                                Arc::new(Mutex::new(spdm_buffer)),
                             )
                             .await
                     };
                     match decap_result {
-                        Err(_) => Err(used),
+                        Err(_) => ProcessMessageResult::DecodeError(used),
                         Ok((decode_size, is_app_message)) => {
                             // reset watchdog in any session messages.
                             if self
@@ -253,35 +277,30 @@ impl ResponderContext {
                                     &spdm_buffer[0..decode_size],
                                     &mut writer,
                                 );
-                                if let Some(send_buffer) = send_buffer {
-                                    if let Err(err) = self
-                                        .send_message(Some(session_id), send_buffer, false)
-                                        .await
-                                    {
-                                        Ok(Err(err))
-                                    } else {
-                                        Ok(status)
+
+                                match status {
+                                    Ok(_) => {
+                                        if let Some(send_buffer) = send_buffer {
+                                            if let Err(err) = self
+                                                .send_message(Some(session_id), send_buffer, false)
+                                                .await
+                                            {
+                                                return ProcessMessageResult::SpdmHandleError(err);
+                                            }
+                                        };
+                                        ProcessMessageResult::SuccessSecured {
+                                            used,
+                                            decode_size,
+                                            is_app_message,
+                                        }
                                     }
-                                } else {
-                                    Ok(status)
+                                    Err(status) => ProcessMessageResult::SpdmHandleError(status),
                                 }
                             } else {
-                                let (status, send_buffer) = self.dispatch_secured_app_message(
-                                    session_id,
-                                    &spdm_buffer[..decode_size],
-                                    app_handle,
-                                    &mut writer,
-                                );
-                                if let Some(send_buffer) = send_buffer {
-                                    if let Err(err) =
-                                        self.send_message(Some(session_id), send_buffer, true).await
-                                    {
-                                        Ok(Err(err))
-                                    } else {
-                                        Ok(status)
-                                    }
-                                } else {
-                                    Ok(status)
+                                ProcessMessageResult::SuccessSecured {
+                                    used,
+                                    decode_size,
+                                    is_app_message,
                                 }
                             }
                         }
@@ -289,18 +308,21 @@ impl ResponderContext {
                 } else {
                     let (status, send_buffer) =
                         self.dispatch_message(&raw_packet[0..used], &mut writer);
-                    if let Some(send_buffer) = send_buffer {
-                        if let Err(err) = self.send_message(None, send_buffer, false).await {
-                            Ok(Err(err))
-                        } else {
-                            Ok(status)
+                    match status {
+                        Ok(_) => {
+                            if let Some(send_buffer) = send_buffer {
+                                if let Err(err) = self.send_message(None, send_buffer, false).await
+                                {
+                                    return ProcessMessageResult::SpdmHandleError(err);
+                                }
+                            };
+                            ProcessMessageResult::Success { used }
                         }
-                    } else {
-                        Ok(status)
+                        Err(status) => ProcessMessageResult::SpdmHandleError(status),
                     }
                 }
             }
-            Err(used) => Err(used),
+            Err(used) => ProcessMessageResult::DecodeError(used),
         }
     }
 
@@ -488,18 +510,6 @@ impl ResponderContext {
             SpdmSessionState::SpdmSessionNotStarted => (Err(SPDM_STATUS_UNSUPPORTED_CAP), None),
             SpdmSessionState::Unknown(_) => (Err(SPDM_STATUS_UNSUPPORTED_CAP), None),
         }
-    }
-
-    fn dispatch_secured_app_message<'a>(
-        &mut self,
-        session_id: u32,
-        bytes: &[u8],
-        app_handle: usize,
-        writer: &'a mut Writer,
-    ) -> (SpdmResult, Option<&'a [u8]>) {
-        debug!("dispatching secured app message\n");
-
-        dispatch_secured_app_message_cb(self, session_id, bytes, app_handle, writer)
     }
 
     pub fn dispatch_message<'a>(
