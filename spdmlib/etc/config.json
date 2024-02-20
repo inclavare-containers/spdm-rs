@@ -1,7 +1,7 @@
 {
     "__usage": "This helps generate compile-time constant sizes for SPDM arrays. See src/config.rs generated for details.",
     "cert_config": {
-        "max_cert_chain_data_size": 4096
+        "max_cert_chain_data_size": 8192
     },
     "measurement_config": {
         "max_measurement_record_size": 4000,
