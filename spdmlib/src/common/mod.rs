@@ -7,7 +7,10 @@ pub mod opaque;
 pub mod session;
 pub mod spdm_codec;
 
+use crate::crypto::cert_operation::CertValidationStrategy;
 use crate::message::SpdmRequestResponseCode;
+use crate::secret::asym_sign::SecretAsymSigner;
+use crate::secret::measurement::MeasurementProvider;
 use crate::{crypto, protocol::*};
 use spin::Mutex;
 extern crate alloc;
@@ -131,6 +134,9 @@ pub trait SpdmTransportEncap {
 pub struct SpdmContext {
     pub device_io: Arc<Mutex<dyn SpdmDeviceIo + Send + Sync>>,
     pub transport_encap: Arc<Mutex<dyn SpdmTransportEncap + Send + Sync>>,
+    pub measurement_provider: Box<dyn MeasurementProvider + Send + Sync>,
+    pub asym_signer: Box<dyn SecretAsymSigner + Send + Sync>,
+    pub cert_validation_strategy: Box<dyn CertValidationStrategy + Send + Sync>,
 
     pub config_info: SpdmConfigInfo,
     pub negotiate_info: SpdmNegotiateInfo,
@@ -152,12 +158,18 @@ impl SpdmContext {
     pub fn new(
         device_io: Arc<Mutex<dyn SpdmDeviceIo + Send + Sync>>,
         transport_encap: Arc<Mutex<dyn SpdmTransportEncap + Send + Sync>>,
+        measurement_provider: Box<dyn MeasurementProvider + Send + Sync>,
+        asym_signer: Box<dyn SecretAsymSigner + Send + Sync>,
+        cert_validation_strategy: Box<dyn CertValidationStrategy + Send + Sync>,
         config_info: SpdmConfigInfo,
         provision_info: SpdmProvisionInfo,
     ) -> Self {
         SpdmContext {
             device_io,
             transport_encap,
+            measurement_provider,
+            asym_signer,
+            cert_validation_strategy,
             config_info,
             negotiate_info: SpdmNegotiateInfo::default(),
             runtime_info: SpdmRuntimeInfo::default(),
@@ -1098,7 +1110,7 @@ impl SpdmContext {
                 Arc::new(&app_buffer[0..decode_size]),
                 Arc::new(Mutex::new(receive_buffer)),
             )
-            .await?;
+            .await?; /* @imlk: decap_app返回的is_app_message被吞掉了 */
 
         Ok(used.0)
     }

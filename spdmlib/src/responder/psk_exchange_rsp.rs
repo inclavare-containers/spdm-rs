@@ -105,8 +105,10 @@ impl ResponderContext {
                     == SpdmMeasurementSummaryHashType::SpdmMeasurementSummaryHashTypeAll)
             {
                 self.common.runtime_info.need_measurement_summary_hash = true;
-                let measurement_summary_hash_res =
-                    secret::measurement::generate_measurement_summary_hash(
+                let measurement_summary_hash_res = self
+                    .common
+                    .measurement_provider
+                    .generate_measurement_summary_hash(
                         self.common.negotiate_info.spdm_version_sel,
                         self.common.negotiate_info.base_hash_sel,
                         self.common.negotiate_info.measurement_specification_sel,

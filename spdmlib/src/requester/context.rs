@@ -5,8 +5,11 @@
 use crate::common::{self, SpdmDeviceIo, SpdmTransportEncap};
 use crate::common::{ManagedBufferA, ST1};
 use crate::config;
+use crate::crypto::cert_operation::CertValidationStrategy;
 use crate::error::{SpdmResult, SPDM_STATUS_RECEIVE_FAIL, SPDM_STATUS_SEND_FAIL};
 use crate::protocol::*;
+use crate::secret::asym_sign::SecretAsymSigner;
+use crate::secret::measurement::MeasurementProvider;
 
 use spin::Mutex;
 extern crate alloc;
@@ -21,6 +24,9 @@ impl RequesterContext {
     pub fn new(
         device_io: Arc<Mutex<dyn SpdmDeviceIo + Send + Sync>>,
         transport_encap: Arc<Mutex<dyn SpdmTransportEncap + Send + Sync>>,
+        measurement_provider: Box<dyn MeasurementProvider + Send + Sync>,
+        asym_signer: Box<dyn SecretAsymSigner + Send + Sync>,
+        cert_validation_strategy: Box<dyn CertValidationStrategy + Send + Sync>,
         config_info: common::SpdmConfigInfo,
         provision_info: common::SpdmProvisionInfo,
     ) -> Self {
@@ -28,6 +34,9 @@ impl RequesterContext {
             common: common::SpdmContext::new(
                 device_io,
                 transport_encap,
+                measurement_provider,
+                asym_signer,
+                cert_validation_strategy,
                 config_info,
                 provision_info,
             ),

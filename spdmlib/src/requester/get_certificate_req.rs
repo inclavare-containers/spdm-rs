@@ -260,10 +260,14 @@ impl RequesterContext {
         //
         // 1.1 verify the integrity of the chain
         //
-        if crypto::cert_operation::verify_cert_chain(
-            &runtime_peer_cert_chain_data.data[..(runtime_peer_cert_chain_data.data_size as usize)],
-        )
-        .is_err()
+        if self
+            .common
+            .cert_validation_strategy
+            .verify_cert_chain(
+                &runtime_peer_cert_chain_data.data
+                    [..(runtime_peer_cert_chain_data.data_size as usize)],
+            )
+            .is_err()
         {
             error!("cert_chain verification - fail! - TBD later\n");
             return Err(SPDM_STATUS_INVALID_CERT);
@@ -299,52 +303,67 @@ impl RequesterContext {
         //
         // 1.3 verify the leaf cert
         //
-        let (leaf_cert_begin, leaf_cert_end) = crypto::cert_operation::get_cert_from_cert_chain(
-            &runtime_peer_cert_chain_data.data[..(runtime_peer_cert_chain_data.data_size as usize)],
-            -1,
-        )?;
-        let leaf_cert = &runtime_peer_cert_chain_data.data[leaf_cert_begin..leaf_cert_end];
-        if check_leaf_certificate(
-            leaf_cert,
-            self.common
-                .negotiate_info
-                .rsp_capabilities_sel
-                .contains(SpdmResponseCapabilityFlags::ALIAS_CERT_CAP),
-        )
-        .is_ok()
+        if self
+            .common
+            .cert_validation_strategy
+            .need_check_leaf_certificate()
         {
-            info!("1.3. Leaf cert is verified\n");
-        } else {
-            info!("Leaf cert verification - fail! \n");
-            return Err(SPDM_STATUS_INVALID_CERT);
+            let (leaf_cert_begin, leaf_cert_end) =
+                crypto::cert_operation::get_cert_from_cert_chain(
+                    &runtime_peer_cert_chain_data.data
+                        [..(runtime_peer_cert_chain_data.data_size as usize)],
+                    -1,
+                )?;
+            let leaf_cert = &runtime_peer_cert_chain_data.data[leaf_cert_begin..leaf_cert_end];
+            if check_leaf_certificate(
+                leaf_cert,
+                self.common
+                    .negotiate_info
+                    .rsp_capabilities_sel
+                    .contains(SpdmResponseCapabilityFlags::ALIAS_CERT_CAP),
+            )
+            .is_ok()
+            {
+                info!("1.3. Leaf cert is verified\n");
+            } else {
+                info!("Leaf cert verification - fail! \n");
+                return Err(SPDM_STATUS_INVALID_CERT);
+            }
         }
-
         //
         // 2. verify the authority of cert chain if provisioned
         //
-        let mut cert_chain_provisioned = false;
-        let mut found_match = false;
-        for peer_root_cert_data in self
+        if self
             .common
-            .provision_info
-            .peer_root_cert_data
-            .iter()
-            .flatten()
+            .cert_validation_strategy
+            .need_check_cert_chain_provisioned()
         {
-            cert_chain_provisioned = true;
-            if root_cert.len() != peer_root_cert_data.data_size as usize {
-                continue;
+            let mut cert_chain_provisioned = false;
+            let mut found_match = false;
+            for peer_root_cert_data in self
+                .common
+                .provision_info
+                .peer_root_cert_data
+                .iter()
+                .flatten()
+            {
+                cert_chain_provisioned = true;
+                if root_cert.len() != peer_root_cert_data.data_size as usize {
+                    continue;
+                }
+                if root_cert[..]
+                    != peer_root_cert_data.data[..peer_root_cert_data.data_size as usize]
+                {
+                    continue;
+                } else {
+                    found_match = true;
+                    break;
+                }
             }
-            if root_cert[..] != peer_root_cert_data.data[..peer_root_cert_data.data_size as usize] {
-                continue;
-            } else {
-                found_match = true;
-                break;
-            }
-        }
 
-        if cert_chain_provisioned && !found_match {
-            return Err(SPDM_STATUS_INVALID_CERT);
+            if cert_chain_provisioned && !found_match {
+                return Err(SPDM_STATUS_INVALID_CERT);
+            }
         }
 
         info!("2. root cert is verified!\n");

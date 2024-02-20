@@ -7,41 +7,25 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 
-use crate::crypto::SpdmCertOperation;
-use crate::error::{SpdmResult, SPDM_STATUS_INVALID_CERT, SPDM_STATUS_INVALID_STATE_LOCAL};
+use crate::{
+    crypto::cert_operation::CertValidationStrategy,
+    error::{SpdmResult, SPDM_STATUS_INVALID_CERT, SPDM_STATUS_INVALID_STATE_LOCAL},
+};
 use ring::io::der;
 
-pub static DEFAULT: SpdmCertOperation = SpdmCertOperation {
-    get_cert_from_cert_chain_cb: get_cert_from_cert_chain,
-    verify_cert_chain_cb: verify_cert_chain,
-};
+pub struct DefaultCertValidationStrategy {}
 
-fn get_cert_from_cert_chain(cert_chain: &[u8], index: isize) -> SpdmResult<(usize, usize)> {
-    let mut offset = 0usize;
-    let mut this_index = 0isize;
-    let cert_chain_size = cert_chain.len();
-    loop {
-        if cert_chain[offset..].len() < 4 || offset > cert_chain.len() {
-            return Err(SPDM_STATUS_INVALID_CERT);
-        }
-        if cert_chain[offset] != 0x30 || cert_chain[offset + 1] != 0x82 {
-            return Err(SPDM_STATUS_INVALID_CERT);
-        }
-        let this_cert_len =
-            ((cert_chain[offset + 2] as usize) << 8) + (cert_chain[offset + 3] as usize) + 4;
-        if this_cert_len > cert_chain_size - offset {
-            return Err(SPDM_STATUS_INVALID_CERT);
-        }
-        if this_index == index {
-            // return the this one
-            return Ok((offset, offset + this_cert_len));
-        }
-        this_index += 1;
-        if (offset + this_cert_len == cert_chain_size) && (index == -1) {
-            // return the last one
-            return Ok((offset, offset + this_cert_len));
-        }
-        offset += this_cert_len;
+impl CertValidationStrategy for DefaultCertValidationStrategy {
+    fn verify_cert_chain(&self, cert_chain: &[u8]) -> SpdmResult {
+        verify_cert_chain(cert_chain)
+    }
+
+    fn need_check_leaf_certificate(&self) -> bool {
+        true
+    }
+
+    fn need_check_cert_chain_provisioned(&self) -> bool {
+        true
     }
 }
 

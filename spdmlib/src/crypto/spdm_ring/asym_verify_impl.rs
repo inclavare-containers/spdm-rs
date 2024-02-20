@@ -73,7 +73,7 @@ fn asym_verify(
     x509v3::check_cert_chain_format(public_cert_der, base_asym_algo)?;
 
     let (leaf_begin, leaf_end) =
-        (super::cert_operation_impl::DEFAULT.get_cert_from_cert_chain_cb)(public_cert_der, -1)?;
+        crate::crypto::cert_operation::get_cert_from_cert_chain(public_cert_der, -1)?;
     let leaf_cert_der = &public_cert_der[leaf_begin..leaf_end];
 
     let res = webpki::EndEntityCert::try_from(leaf_cert_der);

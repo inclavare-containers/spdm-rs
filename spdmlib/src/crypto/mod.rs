@@ -11,8 +11,8 @@ pub use x509v3::*;
 mod spdm_ring;
 
 pub use crypto_callbacks::{
-    SpdmAead, SpdmAsymVerify, SpdmCertOperation, SpdmCryptoRandom, SpdmDhe, SpdmDheKeyExchange,
-    SpdmHash, SpdmHkdf, SpdmHmac,
+    SpdmAead, SpdmAsymVerify, SpdmCryptoRandom, SpdmDhe, SpdmDheKeyExchange, SpdmHash, SpdmHkdf,
+    SpdmHmac,
 };
 
 #[cfg(feature = "hashed-transcript-data")]
@@ -25,7 +25,6 @@ static CRYPTO_HMAC: OnceCell<SpdmHmac> = OnceCell::uninit();
 static CRYPTO_AEAD: OnceCell<SpdmAead> = OnceCell::uninit();
 static CRYPTO_ASYM_VERIFY: OnceCell<SpdmAsymVerify> = OnceCell::uninit();
 static CRYPTO_DHE: OnceCell<SpdmDhe> = OnceCell::uninit();
-static CRYPTO_CERT_OPERATION: OnceCell<SpdmCertOperation> = OnceCell::uninit();
 static CRYPTO_HKDF: OnceCell<SpdmHkdf> = OnceCell::uninit();
 static CRYPTO_RAND: OnceCell<SpdmCryptoRandom> = OnceCell::uninit();
 
@@ -271,37 +270,66 @@ pub mod dhe {
 }
 
 pub mod cert_operation {
-    use super::CRYPTO_CERT_OPERATION;
-    use crate::crypto::SpdmCertOperation;
-    use crate::error::{SpdmResult, SPDM_STATUS_INVALID_STATE_LOCAL};
+    use crate::error::{SpdmResult, SPDM_STATUS_INVALID_CERT};
 
     #[cfg(not(any(feature = "spdm-ring")))]
-    static DEFAULT: SpdmCertOperation = SpdmCertOperation {
-        get_cert_from_cert_chain_cb: |_cert_chain: &[u8],
-                                      _index: isize|
-         -> SpdmResult<(usize, usize)> { unimplemented!() },
-        verify_cert_chain_cb: |_cert_chain: &[u8]| -> SpdmResult { unimplemented!() },
-    };
+    pub struct DefaultCertValidationStrategy {}
+    #[cfg(not(any(feature = "spdm-ring")))]
+    impl CertValidationStrategy for DefaultCertValidationStrategy {
+        fn verify_cert_chain(&self, cert_chain: &[u8]) -> SpdmResult {
+            unimplemented!()
+        }
+
+        fn need_check_leaf_certificate(&self) -> bool {
+            unimplemented!()
+        }
+
+        fn need_check_cert_chain_provisioned(&self) -> bool {
+            unimplemented!()
+        }
+    }
 
     #[cfg(feature = "spdm-ring")]
-    use super::spdm_ring::cert_operation_impl::DEFAULT;
+    pub type DefaultCertValidationStrategy =
+        super::spdm_ring::cert_operation_impl::DefaultCertValidationStrategy;
 
-    pub fn register(context: SpdmCertOperation) -> bool {
-        CRYPTO_CERT_OPERATION.try_init_once(|| context).is_ok()
+    pub trait CertValidationStrategy {
+        /// See RequesterContext::verify_spdm_certificate_chain().
+        /// The `cert_chain` is the concatenate of certificates in the entire certificate chain, in order from root cert to leaf cert. All those certs are encodered in DER format.
+        fn verify_cert_chain(&self, cert_chain: &[u8]) -> SpdmResult;
+
+        fn need_check_leaf_certificate(&self) -> bool;
+
+        fn need_check_cert_chain_provisioned(&self) -> bool;
     }
 
     pub fn get_cert_from_cert_chain(cert_chain: &[u8], index: isize) -> SpdmResult<(usize, usize)> {
-        (CRYPTO_CERT_OPERATION
-            .try_get_or_init(|| DEFAULT.clone())
-            .map_err(|_| SPDM_STATUS_INVALID_STATE_LOCAL)?
-            .get_cert_from_cert_chain_cb)(cert_chain, index)
-    }
-
-    pub fn verify_cert_chain(cert_chain: &[u8]) -> SpdmResult {
-        (CRYPTO_CERT_OPERATION
-            .try_get_or_init(|| DEFAULT.clone())
-            .map_err(|_| SPDM_STATUS_INVALID_STATE_LOCAL)?
-            .verify_cert_chain_cb)(cert_chain)
+        let mut offset = 0usize;
+        let mut this_index = 0isize;
+        let cert_chain_size = cert_chain.len();
+        loop {
+            if cert_chain[offset..].len() < 4 || offset > cert_chain.len() {
+                return Err(SPDM_STATUS_INVALID_CERT);
+            }
+            if cert_chain[offset] != 0x30 || cert_chain[offset + 1] != 0x82 {
+                return Err(SPDM_STATUS_INVALID_CERT);
+            }
+            let this_cert_len =
+                ((cert_chain[offset + 2] as usize) << 8) + (cert_chain[offset + 3] as usize) + 4;
+            if this_cert_len > cert_chain_size - offset {
+                return Err(SPDM_STATUS_INVALID_CERT);
+            }
+            if this_index == index {
+                // return the this one
+                return Ok((offset, offset + this_cert_len));
+            }
+            this_index += 1;
+            if (offset + this_cert_len == cert_chain_size) && (index == -1) {
+                // return the last one
+                return Ok((offset, offset + this_cert_len));
+            }
+            offset += this_cert_len;
+        }
     }
 }
 

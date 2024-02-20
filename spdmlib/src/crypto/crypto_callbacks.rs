@@ -96,15 +96,6 @@ pub struct SpdmHkdf {
     ) -> Option<SpdmHkdfOutputKeyingMaterial>,
 }
 
-type GetCertFromCertChainCb = fn(cert_chain: &[u8], index: isize) -> SpdmResult<(usize, usize)>;
-
-#[derive(Clone)]
-pub struct SpdmCertOperation {
-    pub get_cert_from_cert_chain_cb: GetCertFromCertChainCb,
-
-    pub verify_cert_chain_cb: fn(cert_chain: &[u8]) -> SpdmResult,
-}
-
 type GenerateKeyPairCb = fn(
     dhe_algo: SpdmDheAlgo,
 ) -> Option<(SpdmDheExchangeStruct, Box<dyn SpdmDheKeyExchange + Send>)>;

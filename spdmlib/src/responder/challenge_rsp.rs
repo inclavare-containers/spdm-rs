@@ -76,8 +76,10 @@ impl ResponderContext {
                     == SpdmMeasurementSummaryHashType::SpdmMeasurementSummaryHashTypeAll)
             {
                 self.common.runtime_info.need_measurement_summary_hash = true;
-                let measurement_summary_hash_res =
-                    secret::measurement::generate_measurement_summary_hash(
+                let measurement_summary_hash_res = self
+                    .common
+                    .measurement_provider
+                    .generate_measurement_summary_hash(
                         self.common.negotiate_info.spdm_version_sel,
                         self.common.negotiate_info.base_hash_sel,
                         self.common.negotiate_info.measurement_specification_sel,
@@ -264,12 +266,14 @@ impl ResponderContext {
             return Err(SPDM_STATUS_INVALID_STATE_LOCAL);
         }
 
-        crate::secret::asym_sign::sign(
-            self.common.negotiate_info.base_hash_sel,
-            self.common.negotiate_info.base_asym_sel,
-            message_sign.as_ref(),
-        )
-        .ok_or(SPDM_STATUS_CRYPTO_ERROR)
+        self.common
+            .asym_signer
+            .sign(
+                self.common.negotiate_info.base_hash_sel,
+                self.common.negotiate_info.base_asym_sel,
+                message_sign.as_ref(),
+            )
+            .ok_or(SPDM_STATUS_CRYPTO_ERROR)
     }
 
     #[cfg(not(feature = "hashed-transcript-data"))]
@@ -309,11 +313,13 @@ impl ResponderContext {
                 .ok_or(SPDM_STATUS_BUFFER_FULL)?;
         }
 
-        crate::secret::asym_sign::sign(
-            self.common.negotiate_info.base_hash_sel,
-            self.common.negotiate_info.base_asym_sel,
-            message_m1m2.as_ref(),
-        )
-        .ok_or(SPDM_STATUS_CRYPTO_ERROR)
+        self.common
+            .asym_signer
+            .sign(
+                self.common.negotiate_info.base_hash_sel,
+                self.common.negotiate_info.base_asym_sel,
+                message_m1m2.as_ref(),
+            )
+            .ok_or(SPDM_STATUS_CRYPTO_ERROR)
     }
 }

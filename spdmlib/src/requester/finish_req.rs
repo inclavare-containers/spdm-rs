@@ -361,12 +361,14 @@ impl RequesterContext {
                 .ok_or(SPDM_STATUS_BUFFER_FULL)?;
         }
 
-        crate::secret::asym_sign::sign(
-            self.common.negotiate_info.base_hash_sel,
-            self.common.negotiate_info.base_asym_sel,
-            transcript_sign.as_ref(),
-        )
-        .ok_or(SPDM_STATUS_CRYPTO_ERROR)
+        self.common
+            .asym_signer
+            .sign(
+                self.common.negotiate_info.base_hash_sel,
+                self.common.negotiate_info.base_asym_sel,
+                transcript_sign.as_ref(),
+            )
+            .ok_or(SPDM_STATUS_CRYPTO_ERROR)
     }
 
     #[cfg(feature = "hashed-transcript-data")]
@@ -401,12 +403,15 @@ impl RequesterContext {
             return Err(SPDM_STATUS_INVALID_STATE_LOCAL);
         }
 
-        let signature = crate::secret::asym_sign::sign(
-            self.common.negotiate_info.base_hash_sel,
-            self.common.negotiate_info.base_asym_sel,
-            transcript_sign.as_ref(),
-        )
-        .ok_or(SPDM_STATUS_CRYPTO_ERROR)?;
+        let signature = self
+            .common
+            .asym_signer
+            .sign(
+                self.common.negotiate_info.base_hash_sel,
+                self.common.negotiate_info.base_asym_sel,
+                transcript_sign.as_ref(),
+            )
+            .ok_or(SPDM_STATUS_CRYPTO_ERROR)?;
 
         let peer_slot_id = self.common.runtime_info.get_local_used_cert_chain_slot_id();
         let peer_cert = &self.common.provision_info.my_cert_chain[peer_slot_id as usize]

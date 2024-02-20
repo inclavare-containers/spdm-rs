@@ -150,25 +150,30 @@ impl ResponderContext {
             );
         }
 
-        let number_of_measurement = secret::measurement::measurement_collection(
-            spdm_version_sel,
-            measurement_specification_sel,
-            measurement_hash_sel,
-            SpdmMeasurementOperation::SpdmMeasurementQueryTotalNumber.get_u8() as usize,
-        )
-        .unwrap()
-        .number_of_blocks;
+        let number_of_measurement = self
+            .common
+            .measurement_provider
+            .measurement_collection(
+                spdm_version_sel,
+                measurement_specification_sel,
+                measurement_hash_sel,
+                SpdmMeasurementOperation::SpdmMeasurementQueryTotalNumber.get_u8() as usize,
+            )
+            .unwrap()
+            .number_of_blocks;
 
         let measurement_record = if get_measurements.measurement_operation
             == SpdmMeasurementOperation::SpdmMeasurementRequestAll
         {
-            secret::measurement::measurement_collection(
-                spdm_version_sel,
-                measurement_specification_sel,
-                measurement_hash_sel,
-                SpdmMeasurementOperation::SpdmMeasurementRequestAll.get_u8() as usize,
-            )
-            .unwrap()
+            self.common
+                .measurement_provider
+                .measurement_collection(
+                    spdm_version_sel,
+                    measurement_specification_sel,
+                    measurement_hash_sel,
+                    SpdmMeasurementOperation::SpdmMeasurementRequestAll.get_u8() as usize,
+                )
+                .unwrap()
         } else if let SpdmMeasurementOperation::Unknown(index) =
             get_measurements.measurement_operation
         {
@@ -179,13 +184,15 @@ impl ResponderContext {
                     Some(writer.used_slice()),
                 );
             }
-            secret::measurement::measurement_collection(
-                spdm_version_sel,
-                measurement_specification_sel,
-                measurement_hash_sel,
-                index as usize,
-            )
-            .unwrap()
+            self.common
+                .measurement_provider
+                .measurement_collection(
+                    spdm_version_sel,
+                    measurement_specification_sel,
+                    measurement_hash_sel,
+                    index as usize,
+                )
+                .unwrap()
         } else {
             SpdmMeasurementRecordStructure::default()
         };
@@ -340,12 +347,14 @@ impl ResponderContext {
             return Err(SPDM_STATUS_INVALID_STATE_LOCAL);
         }
 
-        crate::secret::asym_sign::sign(
-            self.common.negotiate_info.base_hash_sel,
-            self.common.negotiate_info.base_asym_sel,
-            message_sign.as_ref(),
-        )
-        .ok_or(SPDM_STATUS_CRYPTO_ERROR)
+        self.common
+            .asym_signer
+            .sign(
+                self.common.negotiate_info.base_hash_sel,
+                self.common.negotiate_info.base_asym_sel,
+                message_sign.as_ref(),
+            )
+            .ok_or(SPDM_STATUS_CRYPTO_ERROR)
     }
 
     #[cfg(not(feature = "hashed-transcript-data"))]
@@ -405,11 +414,13 @@ impl ResponderContext {
                 .ok_or(SPDM_STATUS_BUFFER_FULL)?;
         }
 
-        crate::secret::asym_sign::sign(
-            self.common.negotiate_info.base_hash_sel,
-            self.common.negotiate_info.base_asym_sel,
-            message_l1l2.as_ref(),
-        )
-        .ok_or(SPDM_STATUS_CRYPTO_ERROR)
+        self.common
+            .asym_signer
+            .sign(
+                self.common.negotiate_info.base_hash_sel,
+                self.common.negotiate_info.base_asym_sel,
+                message_l1l2.as_ref(),
+            )
+            .ok_or(SPDM_STATUS_CRYPTO_ERROR)
     }
 }

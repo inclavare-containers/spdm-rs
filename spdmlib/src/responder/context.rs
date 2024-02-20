@@ -2,14 +2,17 @@
 //
 // SPDX-License-Identifier: Apache-2.0 or MIT
 
-use crate::common::{session, SpdmConnectionState, ST1};
 use crate::common::{session::SpdmSessionState, SpdmDeviceIo, SpdmTransportEncap};
+use crate::common::{SpdmConnectionState, ST1};
 use crate::config::{self, MAX_SPDM_MSG_SIZE, RECEIVER_BUFFER_SIZE};
+use crate::crypto::cert_operation::CertValidationStrategy;
 use crate::error::{
     SpdmResult, SpdmStatus, SPDM_STATUS_INVALID_STATE_LOCAL, SPDM_STATUS_UNSUPPORTED_CAP,
 };
 use crate::message::*;
 use crate::protocol::{SpdmRequestCapabilityFlags, SpdmResponseCapabilityFlags};
+use crate::secret::asym_sign::SecretAsymSigner;
+use crate::secret::measurement::MeasurementProvider;
 use crate::watchdog::{reset_watchdog, start_watchdog};
 use codec::{Codec, Reader, Writer};
 extern crate alloc;
@@ -39,6 +42,9 @@ impl ResponderContext {
     pub fn new(
         device_io: Arc<Mutex<dyn SpdmDeviceIo + Send + Sync>>,
         transport_encap: Arc<Mutex<dyn SpdmTransportEncap + Send + Sync>>,
+        measurement_provider: Box<dyn MeasurementProvider + Send + Sync>,
+        asym_signer: Box<dyn SecretAsymSigner + Send + Sync>,
+        cert_validation_strategy: Box<dyn CertValidationStrategy + Send + Sync>,
         config_info: crate::common::SpdmConfigInfo,
         provision_info: crate::common::SpdmProvisionInfo,
     ) -> Self {
@@ -46,6 +52,9 @@ impl ResponderContext {
             common: crate::common::SpdmContext::new(
                 device_io,
                 transport_encap,
+                measurement_provider,
+                asym_signer,
+                cert_validation_strategy,
                 config_info,
                 provision_info,
             ),

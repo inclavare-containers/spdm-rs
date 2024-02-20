@@ -4,87 +4,69 @@
 mod secret_callback;
 
 use conquer_once::spin::OnceCell;
-pub use secret_callback::{SpdmSecretAsymSign, SpdmSecretMeasurement, SpdmSecretPsk};
+pub use secret_callback::SpdmSecretPsk;
 
-static SECRET_MEASUREMENT_INSTANCE: OnceCell<SpdmSecretMeasurement> = OnceCell::uninit();
 static SECRET_PSK_INSTANCE: OnceCell<SpdmSecretPsk> = OnceCell::uninit();
-static SECRET_ASYM_INSTANCE: OnceCell<SpdmSecretAsymSign> = OnceCell::uninit();
 
 pub mod measurement {
-    use super::{SpdmSecretMeasurement, SECRET_MEASUREMENT_INSTANCE};
     use crate::protocol::*;
 
-    pub fn register(context: SpdmSecretMeasurement) -> bool {
-        SECRET_MEASUREMENT_INSTANCE
-            .try_init_once(|| context)
-            .is_ok()
+    pub trait MeasurementProvider {
+        /*
+            Function to get measurements.
+
+            This function wraps SpdmSecret.measurement_collection_cb callback
+            Device security lib is responsible for the implementation of SpdmSecret.
+            If SECRET_INSTANCE got no registered, a panic with string "not implemented"
+            will be emit.
+
+            @When measurement_index == SpdmMeasurementOperation::SpdmMeasurementQueryTotalNumber
+                    A dummy Some(SpdmMeasurementRecordStructure) is returned, with its number_of_blocks
+                    field set and all other field reserved.
+            @When measurement_index != SpdmMeasurementOperation::SpdmMeasurementQueryTotalNumber
+                    A normal Some(SpdmMeasurementRecordStructure) is returned, with all fields valid.
+        */
+        fn measurement_collection(
+            &self,
+            spdm_version: SpdmVersion,
+            measurement_specification: SpdmMeasurementSpecification,
+            measurement_hash_algo: SpdmMeasurementHashAlgo,
+            measurement_index: usize,
+        ) -> Option<SpdmMeasurementRecordStructure>;
+
+        fn generate_measurement_summary_hash(
+            &self,
+            spdm_version: SpdmVersion,
+            base_hash_algo: SpdmBaseHashAlgo,
+            measurement_specification: SpdmMeasurementSpecification,
+            measurement_hash_algo: SpdmMeasurementHashAlgo,
+            measurement_summary_hash_type: SpdmMeasurementSummaryHashType,
+        ) -> Option<SpdmDigestStruct>;
     }
 
-    static UNIMPLETEMTED: SpdmSecretMeasurement = SpdmSecretMeasurement {
-        measurement_collection_cb: |_spdm_version: SpdmVersion,
-                                    _measurement_specification: SpdmMeasurementSpecification,
-                                    _measurement_hash_algo: SpdmMeasurementHashAlgo,
-                                    _measurement_index: usize|
-         -> Option<SpdmMeasurementRecordStructure> {
+    pub struct DefaultMeasurementProvider {}
+
+    impl MeasurementProvider for DefaultMeasurementProvider {
+        fn measurement_collection(
+            &self,
+            _spdm_version: SpdmVersion,
+            _measurement_specification: SpdmMeasurementSpecification,
+            _measurement_hash_algo: SpdmMeasurementHashAlgo,
+            _measurement_index: usize,
+        ) -> Option<SpdmMeasurementRecordStructure> {
             unimplemented!()
-        },
+        }
 
-        generate_measurement_summary_hash_cb:
-            |_spdm_version: SpdmVersion,
-             _base_hash_algo: SpdmBaseHashAlgo,
-             _measurement_specification: SpdmMeasurementSpecification,
-             _measurement_hash_algo: SpdmMeasurementHashAlgo,
-             _measurement_summary_hash_type: SpdmMeasurementSummaryHashType|
-             -> Option<SpdmDigestStruct> { unimplemented!() },
-    };
-
-    /*
-        Function to get measurements.
-
-        This function wraps SpdmSecret.measurement_collection_cb callback
-        Device security lib is responsible for the implementation of SpdmSecret.
-        If SECRET_INSTANCE got no registered, a panic with string "not implemented"
-        will be emit.
-
-        @When measurement_index == SpdmMeasurementOperation::SpdmMeasurementQueryTotalNumber
-                A dummy Some(SpdmMeasurementRecordStructure) is returned, with its number_of_blocks
-                field set and all other field reserved.
-        @When measurement_index != SpdmMeasurementOperation::SpdmMeasurementQueryTotalNumber
-                A normal Some(SpdmMeasurementRecordStructure) is returned, with all fields valid.
-    */
-    pub fn measurement_collection(
-        spdm_version: SpdmVersion,
-        measurement_specification: SpdmMeasurementSpecification,
-        measurement_hash_algo: SpdmMeasurementHashAlgo,
-        measurement_index: usize,
-    ) -> Option<SpdmMeasurementRecordStructure> {
-        (SECRET_MEASUREMENT_INSTANCE
-            .try_get_or_init(|| UNIMPLETEMTED.clone())
-            .ok()?
-            .measurement_collection_cb)(
-            spdm_version,
-            measurement_specification,
-            measurement_hash_algo,
-            measurement_index,
-        )
-    }
-    pub fn generate_measurement_summary_hash(
-        spdm_version: SpdmVersion,
-        base_hash_algo: SpdmBaseHashAlgo,
-        measurement_specification: SpdmMeasurementSpecification,
-        measurement_hash_algo: SpdmMeasurementHashAlgo,
-        measurement_summary_hash_type: SpdmMeasurementSummaryHashType,
-    ) -> Option<SpdmDigestStruct> {
-        (SECRET_MEASUREMENT_INSTANCE
-            .try_get_or_init(|| UNIMPLETEMTED.clone())
-            .ok()?
-            .generate_measurement_summary_hash_cb)(
-            spdm_version,
-            base_hash_algo,
-            measurement_specification,
-            measurement_hash_algo,
-            measurement_summary_hash_type,
-        )
+        fn generate_measurement_summary_hash(
+            &self,
+            _spdm_version: SpdmVersion,
+            _base_hash_algo: SpdmBaseHashAlgo,
+            _measurement_specification: SpdmMeasurementSpecification,
+            _measurement_hash_algo: SpdmMeasurementHashAlgo,
+            _measurement_summary_hash_type: SpdmMeasurementSummaryHashType,
+        ) -> Option<SpdmDigestStruct> {
+            unimplemented!()
+        }
     }
 }
 pub mod psk {
@@ -138,29 +120,37 @@ pub mod psk {
 }
 
 pub mod asym_sign {
-    use super::SECRET_ASYM_INSTANCE;
     use crate::protocol::{SpdmBaseAsymAlgo, SpdmBaseHashAlgo, SpdmSignatureStruct};
-    use crate::secret::SpdmSecretAsymSign;
 
-    pub fn register(context: SpdmSecretAsymSign) -> bool {
-        SECRET_ASYM_INSTANCE.try_init_once(|| context).is_ok()
+    pub trait SecretAsymSigner {
+        /// Get supported hash algo and aysm algo for this SecretAsymSigner. This method
+        /// can be used to determine the RequesterContext's req_asym_algo and
+        /// ResponderContext's base_asym_algo filed
+        fn supported_algo(&self) -> (SpdmBaseHashAlgo, SpdmBaseAsymAlgo);
+
+        fn sign(
+            &self,
+            base_hash_algo: SpdmBaseHashAlgo,
+            base_asym_algo: SpdmBaseAsymAlgo,
+            data: &[u8],
+        ) -> Option<SpdmSignatureStruct>;
     }
 
-    static DEFAULT: SpdmSecretAsymSign = SpdmSecretAsymSign {
-        sign_cb: |_base_hash_algo: SpdmBaseHashAlgo,
-                  _base_asym_algo: SpdmBaseAsymAlgo,
-                  _data: &[u8]|
-         -> Option<SpdmSignatureStruct> { unimplemented!() },
-    };
+    pub struct DefaultSecretAsymSigner {}
 
-    pub fn sign(
-        base_hash_algo: SpdmBaseHashAlgo,
-        base_asym_algo: SpdmBaseAsymAlgo,
-        data: &[u8],
-    ) -> Option<SpdmSignatureStruct> {
-        (SECRET_ASYM_INSTANCE
-            .try_get_or_init(|| DEFAULT.clone())
-            .ok()?
-            .sign_cb)(base_hash_algo, base_asym_algo, data)
+    impl SecretAsymSigner for DefaultSecretAsymSigner {
+        fn supported_algo(&self) -> (SpdmBaseHashAlgo, SpdmBaseAsymAlgo) {
+            /* Support none asym algo */
+            (SpdmBaseHashAlgo::all(), SpdmBaseAsymAlgo::empty())
+        }
+
+        fn sign(
+            &self,
+            _base_hash_algo: SpdmBaseHashAlgo,
+            _base_asym_algo: SpdmBaseAsymAlgo,
+            _data: &[u8],
+        ) -> Option<SpdmSignatureStruct> {
+            unimplemented!()
+        }
     }
 }
