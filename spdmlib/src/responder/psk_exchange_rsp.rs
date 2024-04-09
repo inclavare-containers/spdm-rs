@@ -21,7 +21,6 @@ use crate::responder::*;
 use crate::watchdog::start_watchdog;
 use config::MAX_SPDM_PSK_CONTEXT_SIZE;
 extern crate alloc;
-use crate::secret;
 use alloc::boxed::Box;
 use core::convert::TryFrom;
 use core::ops::DerefMut;
