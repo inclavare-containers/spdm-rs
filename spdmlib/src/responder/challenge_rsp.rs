@@ -18,7 +18,6 @@ use crate::error::{SPDM_STATUS_BUFFER_FULL, SPDM_STATUS_CRYPTO_ERROR};
 use crate::message::*;
 use crate::protocol::*;
 use crate::responder::*;
-use crate::secret;
 
 impl ResponderContext {
     pub fn handle_spdm_challenge<'a>(

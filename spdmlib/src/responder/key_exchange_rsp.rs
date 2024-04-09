@@ -20,7 +20,6 @@ use crate::responder::*;
 extern crate alloc;
 use crate::common::opaque::SpdmOpaqueStruct;
 use crate::message::*;
-use crate::secret;
 use alloc::boxed::Box;
 use core::convert::TryFrom;
 use core::ops::DerefMut;

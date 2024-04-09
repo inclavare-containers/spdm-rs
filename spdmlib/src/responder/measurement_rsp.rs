@@ -23,7 +23,6 @@ use crate::error::SPDM_STATUS_NOT_READY_PEER;
 use crate::message::*;
 use crate::protocol::*;
 use crate::responder::*;
-use crate::secret;
 
 impl ResponderContext {
     pub fn handle_spdm_measurement<'a>(
