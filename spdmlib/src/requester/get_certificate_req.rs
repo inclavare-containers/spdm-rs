@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0 or MIT
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+
 use crate::crypto::{self, check_leaf_certificate, is_root_certificate};
 use crate::error::{
     SpdmResult, SPDM_STATUS_CRYPTO_ERROR, SPDM_STATUS_ERROR_PEER, SPDM_STATUS_INVALID_CERT,
@@ -256,6 +259,19 @@ impl RequesterContext {
         );
         let runtime_peer_cert_chain_data = SpdmCertChainData { data_size, data };
         info!("1. get runtime_peer_cert_chain_data!\n");
+        debug!(
+            /* convert from DER to PEM for debug */
+            "runtime_peer_cert_chain_data:\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+            STANDARD.encode(
+                &runtime_peer_cert_chain_data.data
+                    [..runtime_peer_cert_chain_data.data_size as usize]
+            ).chars()
+            .collect::<Vec<_>>()
+            .chunks(64)
+            .map(|chunk| chunk.iter().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+        );
 
         //
         // 1.1 verify the integrity of the chain

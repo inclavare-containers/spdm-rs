@@ -64,7 +64,7 @@ impl ResponderContext {
         let negotiate_algorithms =
             SpdmNegotiateAlgorithmsRequestPayload::spdm_read(&mut self.common, &mut reader);
         if let Some(negotiate_algorithms) = negotiate_algorithms {
-            debug!("!!! negotiate_algorithms : {:02x?}\n", negotiate_algorithms);
+            debug!("negotiate_algorithms req received: {:#02x?}", negotiate_algorithms);
             other_params_support = negotiate_algorithms.other_params_support;
             self.common.negotiate_info.measurement_specification_sel =
                 negotiate_algorithms.measurement_specification;
@@ -144,7 +144,7 @@ impl ResponderContext {
                 }
             }
         } else {
-            error!("!!! negotiate_algorithms : fail !!!\n");
+            error!("!!! negotiate_algorithms : fail !!!");
             self.write_spdm_error(SpdmErrorCode::SpdmErrorInvalidRequest, 0, writer);
             return (
                 Err(SPDM_STATUS_INVALID_MSG_FIELD),
@@ -194,6 +194,8 @@ impl ResponderContext {
             .negotiate_info
             .key_schedule_sel
             .prioritize(self.common.config_info.key_schedule_algo);
+
+        debug!("negotiate algorithms:\nmeasurement_specification_sel: {:?}\nmeasurement_hash_sel: {:?}\nbase_hash_sel: {:?}\nbase_asym_sel: {:?}\ndhe_sel: {:?}\naead_sel: {:?}\nreq_asym_sel: {:?}\nkey_schedule_sel: {:?}", self.common.negotiate_info.measurement_specification_sel, self.common.negotiate_info.measurement_hash_sel, self.common.negotiate_info.base_hash_sel, self.common.negotiate_info.base_asym_sel, self.common.negotiate_info.dhe_sel, self.common.negotiate_info.aead_sel, self.common.negotiate_info.req_asym_sel, self.common.negotiate_info.key_schedule_sel);
 
         //
         // update cert chain - append root cert hash
