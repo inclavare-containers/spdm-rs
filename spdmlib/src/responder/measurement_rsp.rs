@@ -129,7 +129,14 @@ impl ResponderContext {
             }
         }
 
-        let measurement_hash_sel = self.common.negotiate_info.measurement_hash_sel;
+        let measurement_hash_sel = if get_measurements
+            .measurement_attributes
+            .contains(SpdmMeasurementAttributes::RAW_BIT_STREAM_REQUESTED)
+        {
+            SpdmMeasurementHashAlgo::RAW_BIT_STREAM
+        } else {
+            self.common.negotiate_info.measurement_hash_sel
+        };
         let spdm_version_sel = self.common.negotiate_info.spdm_version_sel;
         let measurement_specification_sel =
             self.common.negotiate_info.measurement_specification_sel;
