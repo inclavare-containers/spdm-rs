@@ -21,6 +21,7 @@ fn asym_verify(
     if signature.data_size != base_asym_algo.get_size() {
         return Err(SPDM_STATUS_VERIF_FAIL);
     }
+    trace!("asym_verify(): base_hash_algo: {base_hash_algo:?} base_asym_algo: {base_asym_algo:?}");
 
     let algorithm = match (base_hash_algo, base_asym_algo) {
         (SpdmBaseHashAlgo::TPM_ALG_SHA_256, SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P256) => {
@@ -66,11 +67,15 @@ fn asym_verify(
             &webpki::RSA_PSS_2048_8192_SHA512_LEGACY_KEY
         }
         _ => {
+            error!(
+                "unsupported (base_hash_algo, base_asym_algo): ({:?}, {:?})",
+                base_hash_algo, base_asym_algo
+            );
             panic!();
         }
     };
 
-    x509v3::check_cert_chain_format(public_cert_der, base_asym_algo)?;
+    x509v3::check_cert_chain_format(public_cert_der, base_hash_algo, base_asym_algo)?;
 
     let (leaf_begin, leaf_end) =
         crate::crypto::cert_operation::get_cert_from_cert_chain(public_cert_der, -1)?;

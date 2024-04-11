@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 or MIT
 
 use crate::error::{SpdmResult, SPDM_STATUS_VERIF_FAIL};
-use crate::protocol::SpdmBaseAsymAlgo;
+use crate::protocol::{SpdmBaseAsymAlgo, SpdmBaseHashAlgo};
 
 // Key Usage: Digital Signature Bit;
 const RFC_5280_KEY_USAGE_DIGITAL_SIGNATURE_BIT: u8 = 0x80;
@@ -58,6 +58,7 @@ const OID_EXT_KEY_USAGE: &[u8] = &[0x55, 0x1D, 0x25];
 // 3. no more or less bytes found
 pub fn check_cert_chain_format(
     cert_chain: &[u8],
+    base_hash_algo: SpdmBaseHashAlgo,
     base_asym_algo: SpdmBaseAsymAlgo,
 ) -> SpdmResult<usize> {
     let mut cc_walker = 0usize;
@@ -65,7 +66,8 @@ pub fn check_cert_chain_format(
     let cert_chain_size = cert_chain.len();
 
     while cc_walker < cert_chain_size {
-        cc_walker = cc_walker + check_cert_format(&cert_chain[cc_walker..], base_asym_algo)?;
+        cc_walker = cc_walker
+            + check_cert_format(&cert_chain[cc_walker..], base_hash_algo, base_asym_algo)?;
         cert_count += 1;
     }
 
@@ -79,7 +81,11 @@ pub fn check_cert_chain_format(
 // IN DER encoded certificate slice
 // OUT Ok cert size
 // OUT Error Mulformed certificate found
-fn check_cert_format(cert: &[u8], base_asym_algo: SpdmBaseAsymAlgo) -> SpdmResult<usize> {
+fn check_cert_format(
+    cert: &[u8],
+    base_hash_algo: SpdmBaseHashAlgo,
+    base_asym_algo: SpdmBaseAsymAlgo,
+) -> SpdmResult<usize> {
     let mut c_walker = 0usize;
     let len = cert.len();
 
@@ -90,11 +96,14 @@ fn check_cert_format(cert: &[u8], base_asym_algo: SpdmBaseAsymAlgo) -> SpdmResul
     c_walker += bytes_consumed;
 
     if len == c_walker + body_size {
-        c_walker += check_tbs_certificate(&cert[c_walker..], base_asym_algo, true)?;
-        c_walker += check_signature_algorithm(&cert[c_walker..], base_asym_algo, true)?;
+        c_walker += check_tbs_certificate(&cert[c_walker..], base_hash_algo, base_asym_algo, true)?;
+        c_walker +=
+            check_signature_algorithm(&cert[c_walker..], base_hash_algo, base_asym_algo, true)?;
     } else {
-        c_walker += check_tbs_certificate(&cert[c_walker..], base_asym_algo, false)?;
-        c_walker += check_signature_algorithm(&cert[c_walker..], base_asym_algo, false)?;
+        c_walker +=
+            check_tbs_certificate(&cert[c_walker..], base_hash_algo, base_asym_algo, false)?;
+        c_walker +=
+            check_signature_algorithm(&cert[c_walker..], base_hash_algo, base_asym_algo, false)?;
     }
 
     c_walker += check_signature_value(&cert[c_walker..], base_asym_algo)?;
@@ -108,6 +117,7 @@ fn check_cert_format(cert: &[u8], base_asym_algo: SpdmBaseAsymAlgo) -> SpdmResul
 
 fn check_tbs_certificate(
     data: &[u8],
+    base_hash_algo: SpdmBaseHashAlgo,
     base_asym_algo: SpdmBaseAsymAlgo,
     is_leaf_cert: bool,
 ) -> SpdmResult<usize> {
@@ -141,7 +151,10 @@ fn check_tbs_certificate(
     t_walker += bytes_consumed;
 
     if is_leaf_cert {
-        check_object_identifier(&data[t_walker..], get_oid_by_base_asym_algo(base_asym_algo))?;
+        check_object_identifier(
+            &data[t_walker..],
+            get_oid_by_base_asym_algo(base_hash_algo, base_asym_algo),
+        )?;
     } else {
         check_object_identifier(&data[t_walker..], None)?;
     }
@@ -192,6 +205,7 @@ fn check_tbs_certificate(
 
 fn check_signature_algorithm(
     data: &[u8],
+    base_hash_algo: SpdmBaseHashAlgo,
     base_asym_algo: SpdmBaseAsymAlgo,
     is_leaf_cert: bool,
 ) -> SpdmResult<usize> {
@@ -203,7 +217,10 @@ fn check_signature_algorithm(
     s_walker += bytes_consumed;
 
     if is_leaf_cert {
-        check_object_identifier(&data[s_walker..], get_oid_by_base_asym_algo(base_asym_algo))?;
+        check_object_identifier(
+            &data[s_walker..],
+            get_oid_by_base_asym_algo(base_hash_algo, base_asym_algo),
+        )?;
     } else {
         check_object_identifier(&data[s_walker..], None)?;
     }
@@ -544,16 +561,31 @@ fn check_and_get_common_tag(data: &[u8]) -> SpdmResult<(usize, &[u8])> {
     }
 }
 
-fn get_oid_by_base_asym_algo(base_asym_algo: SpdmBaseAsymAlgo) -> Option<&'static [u8]> {
-    match base_asym_algo {
-        SpdmBaseAsymAlgo::TPM_ALG_RSASSA_2048 => Some(OID_RSA_SHA256RSA),
-        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_2048 => Some(OID_RSA_SSA_PSS),
-        SpdmBaseAsymAlgo::TPM_ALG_RSASSA_3072 => Some(OID_RSA_SHA384RSA),
-        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_3072 => Some(OID_RSA_SSA_PSS),
-        SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P256 => Some(OID_ECDSA_SHA256),
-        SpdmBaseAsymAlgo::TPM_ALG_RSASSA_4096 => Some(OID_RSA_SHA512RSA),
-        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_4096 => Some(OID_RSA_SSA_PSS),
-        SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P384 => Some(OID_ECDSA_SHA384),
+fn get_oid_by_base_asym_algo(
+    base_hash_algo: SpdmBaseHashAlgo,
+    base_asym_algo: SpdmBaseAsymAlgo,
+) -> Option<&'static [u8]> {
+    match (base_hash_algo, base_asym_algo) {
+        (_, SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_2048) => Some(OID_RSA_SSA_PSS),
+        (_, SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_3072) => Some(OID_RSA_SSA_PSS),
+        (_, SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_4096) => Some(OID_RSA_SSA_PSS),
+        (SpdmBaseHashAlgo::TPM_ALG_SHA_256, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_2048)
+        | (SpdmBaseHashAlgo::TPM_ALG_SHA_256, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_3072)
+        | (SpdmBaseHashAlgo::TPM_ALG_SHA_256, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_4096) => {
+            Some(OID_RSA_SHA256RSA)
+        }
+        (SpdmBaseHashAlgo::TPM_ALG_SHA_384, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_2048)
+        | (SpdmBaseHashAlgo::TPM_ALG_SHA_384, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_3072)
+        | (SpdmBaseHashAlgo::TPM_ALG_SHA_384, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_4096) => {
+            Some(OID_RSA_SHA384RSA)
+        }
+        (SpdmBaseHashAlgo::TPM_ALG_SHA_512, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_2048)
+        | (SpdmBaseHashAlgo::TPM_ALG_SHA_512, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_3072)
+        | (SpdmBaseHashAlgo::TPM_ALG_SHA_512, SpdmBaseAsymAlgo::TPM_ALG_RSASSA_4096) => {
+            Some(OID_RSA_SHA512RSA)
+        }
+        (_, SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P256) => Some(OID_ECDSA_SHA256),
+        (_, SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P384) => Some(OID_ECDSA_SHA384),
         _ => None,
     }
 }
