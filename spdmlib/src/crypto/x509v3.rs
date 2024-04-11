@@ -26,6 +26,7 @@ const ASN1_TAG_EXTN_VALUE: u8 = 0x04;
 const ASN1_LENGTH_MULTI_OCTET_MASK: u8 = 0x80;
 
 const X509V3_VERSION: u8 = 2;
+const OID_RSA_SSA_PSS: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0au8];
 const OID_RSA_SHA256RSA: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0bu8];
 const OID_RSA_SHA384RSA: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0cu8];
 const OID_RSA_SHA512RSA: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0du8];
@@ -546,12 +547,12 @@ fn check_and_get_common_tag(data: &[u8]) -> SpdmResult<(usize, &[u8])> {
 fn get_oid_by_base_asym_algo(base_asym_algo: SpdmBaseAsymAlgo) -> Option<&'static [u8]> {
     match base_asym_algo {
         SpdmBaseAsymAlgo::TPM_ALG_RSASSA_2048 => Some(OID_RSA_SHA256RSA),
-        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_2048 => Some(OID_RSA_SHA256RSA),
+        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_2048 => Some(OID_RSA_SSA_PSS),
         SpdmBaseAsymAlgo::TPM_ALG_RSASSA_3072 => Some(OID_RSA_SHA384RSA),
-        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_3072 => Some(OID_RSA_SHA384RSA),
+        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_3072 => Some(OID_RSA_SSA_PSS),
         SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P256 => Some(OID_ECDSA_SHA256),
         SpdmBaseAsymAlgo::TPM_ALG_RSASSA_4096 => Some(OID_RSA_SHA512RSA),
-        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_4096 => Some(OID_RSA_SHA512RSA),
+        SpdmBaseAsymAlgo::TPM_ALG_RSAPSS_4096 => Some(OID_RSA_SSA_PSS),
         SpdmBaseAsymAlgo::TPM_ALG_ECDSA_ECC_NIST_P384 => Some(OID_ECDSA_SHA384),
         _ => None,
     }
