@@ -175,8 +175,14 @@ impl RequesterContext {
 
         if let Some(session_id) = session_id {
             self.common
-                .decode_secured_message(session_id, &transport_buffer[..used], receive_buffer)
+                .decode_secured_message(
+                    session_id,
+                    &transport_buffer[..used],
+                    receive_buffer,
+                    false,
+                )
                 .await
+                .map(|r| r.0)
         } else {
             self.common
                 .decap(&transport_buffer[..used], receive_buffer)

@@ -1070,7 +1070,8 @@ impl SpdmContext {
         session_id: u32,
         transport_buffer: &[u8],
         receive_buffer: &mut [u8],
-    ) -> SpdmResult<usize> {
+        from_requester: bool,
+    ) -> SpdmResult<(usize /* used */, bool /* is_app_message */)> {
         let mut encoded_receive_buffer = [0u8; config::RECEIVER_BUFFER_SIZE];
 
         let (used, secured_message) = {
@@ -1098,21 +1099,19 @@ impl SpdmContext {
         let decode_size = spdm_session.decode_spdm_secured_message(
             &encoded_receive_buffer[..used],
             &mut app_buffer,
-            false,
+            from_requester,
         )?;
 
         let mut transport_encap = self.transport_encap.lock();
         let transport_encap: &mut (dyn SpdmTransportEncap + Send + Sync) =
             transport_encap.deref_mut();
 
-        let used = transport_encap
+        transport_encap
             .decap_app(
                 Arc::new(&app_buffer[0..decode_size]),
                 Arc::new(Mutex::new(receive_buffer)),
             )
-            .await?; /* @imlk: decap_app返回的is_app_message被吞掉了 */
-
-        Ok(used.0)
+            .await
     }
 }
 
